@@ -680,7 +680,7 @@ def main():
                 print("No signals generated at this time.")
             
             print("Waiting for next update in 10 minutes...")
-            time.sleep(600)  # Wait for 10 minutes
+            time.sleep(1)  # Wait for 10 minutes
             
         except Exception as e:
             print(f"Error in main loop: {e}")
