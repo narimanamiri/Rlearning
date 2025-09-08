@@ -881,6 +881,141 @@ class TradingSignalGenerator:
     
     def signals_to_excel(self, signals, filename="trading_signals.xlsx"):
         """Save signals to Excel file"""
+class TradingSignalGenerator:
+    """Main class to generate trading signals with enhanced data crawling"""
+    
+    def __init__(self, symbols=['EUR/USD', 'GBP/USD', 'USD/JPY']):
+        self.symbols = symbols
+        self.data_crawler = ForexDataCrawler()
+        self.feature_engineer = FeatureEngineer(window_size=50)
+        
+        # Initialize RL agent
+        state_shape = (50, 18)  # window_size x num_features (increased due to added features)
+        self.agent = PPOAgent(state_shape, num_actions=3)
+        
+        # Load or train model
+        self.model_path = "trading_model.pth"
+        if os.path.exists(self.model_path):
+            try:
+                self.load_model()
+            except (RuntimeError, KeyError) as e:
+                print(f"Model architecture mismatch: {e}")
+                print("Training new model with updated architecture...")
+                self.train_model()
+        else:
+            self.train_model()
+    
+    def fetch_data(self, symbol):
+        """Fetch data using the enhanced crawler"""
+        return self.data_crawler.get_historical_data(symbol, period="1mo", timeframe='H1')
+    
+    def train_model(self):
+        """Train the RL model"""
+        print("Training RL model...")
+        
+        # For demonstration, we'll use sample data
+        sample_data = self.data_crawler.generate_realistic_sample_data("EUR/USD", 1000)
+        observations, _ = self.feature_engineer.prepare_features(sample_data)
+        
+        env = AutoTradingEnv(observations)
+        
+        # Simplified training loop
+        state = env.reset()
+        for step in range(1000):
+            action, value = self.agent.select_action(state)
+            next_state, reward, done, _ = env.step(action)
+            
+            self.agent.store_transition(state, action, reward, next_state, done)
+            
+            if done:
+                state = env.reset()
+            else:
+                state = next_state
+            
+            if step % 50 == 0:
+                self.agent.update()
+        
+        self.save_model()
+    
+    def save_model(self):
+        """Save the trained model"""
+        # Also save the feature dimension to check compatibility later
+        torch.save({
+            'policy_state_dict': self.agent.policy.state_dict(),
+            'optimizer_state_dict': self.agent.optimizer.state_dict(),
+            'feature_dim': self.agent.policy.conv[0].weight.shape[1]  # Save the input feature dimension
+        }, self.model_path)
+    
+    def load_model(self):
+        """Load a trained model with compatibility check"""
+        checkpoint = torch.load(self.model_path)
+        
+        # Check if the saved model has the same feature dimension as the current model
+        saved_feature_dim = checkpoint.get('feature_dim', None)
+        current_feature_dim = self.agent.policy.conv[0].weight.shape[1]
+        
+        if saved_feature_dim is not None and saved_feature_dim != current_feature_dim:
+            raise RuntimeError(f"Feature dimension mismatch: saved model has {saved_feature_dim}, current model expects {current_feature_dim}")
+        
+        self.agent.policy.load_state_dict(checkpoint['policy_state_dict'])
+        self.agent.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    
+    def generate_signals(self):
+        """Generate trading signals for all symbols"""
+        all_signals = []
+        
+        for symbol in self.symbols:
+            print(f"Generating signals for {symbol}...")
+            
+            # Fetch data
+            df = self.fetch_data(symbol)
+            
+            # Prepare features
+            observations, timestamps = self.feature_engineer.prepare_features(df)
+            
+            if len(observations) == 0:
+                print(f"Not enough data for {symbol}")
+                continue
+            
+            # Get the latest observation
+            latest_obs = observations[-1]
+            
+            # Get prediction from RL model
+            action, _ = self.agent.select_action(latest_obs, deterministic=True)
+            
+            # Current price
+            current_price = df['Close'].iloc[-1]
+            
+            # Calculate stop loss and take profit based on ATR
+            atr = df['atr'].iloc[-1] if 'atr' in df.columns else current_price * 0.01
+            
+            if action == 1:  # Buy signal
+                stop_loss = current_price - (2 * atr)
+                take_profit = current_price + (3 * atr)
+                position_type = "BUY"
+            elif action == 2:  # Sell signal
+                stop_loss = current_price + (2 * atr)
+                take_profit = current_price - (3 * atr)
+                position_type = "SELL"
+            else:  # Hold
+                continue
+            
+            # Create signal
+            signal = {
+                'Time': timestamps[-1],
+                'Currency': symbol,
+                'Position type': position_type,
+                'Buy price': current_price,
+                'Take profit price': take_profit,
+                'Stop loss price': stop_loss
+            }
+            
+            all_signals.append(signal)
+        
+        return all_signals
+    
+    def signals_to_excel(self, signals, filename="trading_signals.xlsx"):
+        """Save signals to Excel file"""
         if not signals:
             print("No signals to save")
             return
@@ -927,7 +1062,7 @@ def main():
                 print("No signals generated at this time.")
             
             print("Waiting for next update in 10 minutes...")
-            time.sleep(600)  # Wait for 10 minutes
+            time.sleep(1)  # Wait for 10 minutes
             
         except Exception as e:
             print(f"Error in main loop: {e}")
