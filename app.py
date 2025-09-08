@@ -197,7 +197,7 @@ class AutoTradingEnv(gym.Env):
         self.balance = self.initial_balance
         self.holdings = 0
         self.net_worth = self.initial_balance
-        self.max_net_worth = self.initial_worth
+        self.max_net_worth = self.initial_balance  # Fixed the typo here
         self.trades = 0
         self.current_step = 0
         self.done = False
