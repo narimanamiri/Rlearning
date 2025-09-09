@@ -28,6 +28,47 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
 
+class PolicyNetwork(nn.Module):
+    """Neural Network for Policy"""
+    
+    def __init__(self, input_shape, num_actions):
+        super(PolicyNetwork, self).__init__()
+        
+        self.conv = nn.Sequential(
+            nn.Conv1d(input_shape[1], 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool1d(1)
+        )
+        
+        # Calculate the output size of the convolutional layers
+        conv_out_size = self._get_conv_out(input_shape)
+        
+        self.fc = nn.Sequential(
+            nn.Linear(conv_out_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, num_actions)
+        )
+        
+        self.value_head = nn.Sequential(
+            nn.Linear(conv_out_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1)
+        )
+    
+    def _get_conv_out(self, shape):
+        o = self.conv(torch.zeros(1, *shape[::-1]))
+        return int(np.prod(o.size()))
+    
+    def forward(self, x):
+        # x shape: (batch_size, window_size, num_features)
+        x = x.permute(0, 2, 1)  # Change to (batch_size, num_features, window_size)
+        conv_out = self.conv(x).view(x.size(0), -1)
+        action_probs = self.fc(conv_out)
+        state_values = self.value_head(conv_out)
+        return action_probs, state_values
+
 class RealisticDataGenerator:
     """
     Generates realistic forex data with proper trends, volatility, and patterns
@@ -359,8 +400,6 @@ class ImprovedAutoTradingEnv(gym.Env):
         position = "Long" if self.position == 1 else "Short" if self.position == -1 else "Neutral"
         print(f'Step: {self.current_step}, Position: {position}, Net Worth: {self.net_worth:.2f}, Profit: {profit:.2f}')
 
-# PolicyNetwork and PPOAgent remain largely the same but with adjusted hyperparameters
-
 class ImprovedPPOAgent:
     """Improved PPO Agent with better exploration"""
     
@@ -619,6 +658,10 @@ class ImprovedTradingSignalGenerator:
 def main():
     """Main function with improved training and signal generation"""
     print("Starting Improved Reinforcement Learning Auto-Trading System...")
+    
+    # Delete old model file if it exists to ensure fresh training
+    if os.path.exists("trading_model.pth"):
+        os.remove("trading_model.pth")
     
     # Initialize the signal generator
     signal_generator = ImprovedTradingSignalGenerator()
