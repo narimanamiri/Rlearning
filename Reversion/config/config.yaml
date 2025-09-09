@@ -1,0 +1,35 @@
+data:
+  symbols: ["BTC-USD", "ETH-USD", "AAPL", "SPY"]
+  interval: "1d"
+  period: "3y"
+  train_ratio: 0.7
+  val_ratio: 0.15
+
+env:
+  window_size: 50
+  initial_balance: 10000
+  transaction_cost_pct: 0.001
+  slippage_pct: 0.0005
+  max_position: 1.0
+  stop_loss_pct: 0.10
+  risk_lambda: 0.5
+
+model:
+  algo: "PPO"
+  policy: "MlpLstmPolicy"
+  learning_rate: 3e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  seed: 42
+
+training:
+  total_timesteps: 100000
+  log_interval: 1000
+  eval_freq: 5000
+  early_stop_patience: 5
