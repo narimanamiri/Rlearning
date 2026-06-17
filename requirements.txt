@@ -1,0 +1,76 @@
+# Core dependencies
+numpy
+pandas
+scipy
+matplotlib
+seaborn
+statsmodels
+
+# Machine Learning & Deep Learning
+torch
+torchvision
+scikit-learn
+xgboost
+lightgbm
+catboost
+
+# Reinforcement Learning
+gymnasium
+stable-baselines3
+tensorboard
+
+# Web Scraping & API Integration
+requests
+beautifulsoup4
+selenium
+webdriver-manager
+cloudscraper
+yfinance
+ccxt
+pandas
+
+# Image Processing & OCR
+opencv-python
+Pillow
+pytesseract
+easyocr
+
+# Data Processing & Utilities
+tqdm
+joblib
+pyarrow
+fastparquet
+python-dateutil
+pytz
+
+# Windows-specific dependencies
+pywin32
+colorama
+
+# API & Web Framework
+fastapi
+uvicorn
+aiohttp
+
+# Database & Storage
+sqlalchemy
+psycopg2-binary
+redis
+pymongo
+
+# Utilities & Helpers
+loguru
+python-dotenv
+pyyaml
+rich
+typer
+
+# Testing & Development
+pytest
+pytest-cov
+black
+flake8
+mypy
+pre-commit
+jupyter
+ipython

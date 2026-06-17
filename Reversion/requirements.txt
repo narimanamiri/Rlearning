@@ -1,0 +1,10 @@
+gymnasium>=0.28.0
+stable-baselines3[extra]
+yfinance
+ccxt
+pandas
+numpy
+scikit-learn
+pyyaml
+torch
+tensorboard
