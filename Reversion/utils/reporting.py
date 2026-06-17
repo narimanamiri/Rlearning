@@ -228,3 +228,105 @@ def export_combined_summary(reports: Dict[str, "BacktestReport"],
         json.dump(rows, fh, indent=2, default=str)
     paths["summary_json"] = json_path
     return paths
+
+
+def plot_equity_curve(report: "BacktestReport",
+                      out_dir: str = "reports",
+                      prefix: str = "") -> Optional[str]:
+    """Render a PNG of the equity curve (+ price overlay if available).
+
+    ``matplotlib`` is imported lazily and guarded: if it is not installed the
+    function logs a hint and returns ``None`` instead of raising, so the core
+    pipeline never hard-depends on it.
+    """
+    try:
+        import matplotlib
+        matplotlib.use("Agg")  # headless / no display needed
+        import matplotlib.pyplot as plt
+    except Exception as exc:  # pragma: no cover - depends on optional dep
+        print(f"[plot] matplotlib unavailable ({exc}); skipping equity plot. "
+              "Install it with `pip install matplotlib` to enable --plot.")
+        return None
+
+    os.makedirs(out_dir, exist_ok=True)
+    sym = report._safe_symbol()
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base = f"{prefix}{sym}_{stamp}" if prefix else f"{sym}_{stamp}"
+    path = os.path.join(out_dir, f"{base}_equity.png")
+
+    eq = report.equity_curve
+    steps = list(range(len(eq)))
+
+    fig, ax1 = plt.subplots(figsize=(10, 5))
+    ax1.plot(steps, eq, color="tab:blue", label="Net worth")
+    ax1.set_xlabel("Step")
+    ax1.set_ylabel("Net worth", color="tab:blue")
+    ax1.tick_params(axis="y", labelcolor="tab:blue")
+    ax1.grid(True, alpha=0.3)
+
+    if report.prices is not None and len(report.prices) == len(eq):
+        ax2 = ax1.twinx()
+        ax2.plot(steps, report.prices, color="tab:gray", alpha=0.5,
+                 label="Price")
+        ax2.set_ylabel("Price", color="tab:gray")
+        ax2.tick_params(axis="y", labelcolor="tab:gray")
+
+    ret = report.metrics.get("total_return_pct") if report.metrics else None
+    title = f"{report.symbol} equity curve"
+    if ret is not None:
+        title += f"  (return {ret:.2f}%)"
+    ax1.set_title(title)
+    fig.tight_layout()
+    fig.savefig(path, dpi=110)
+    plt.close(fig)
+    return path
+
+
+def build_leaderboard(report_dir: str = "reports",
+                      sort_by: str = "sharpe_ratio",
+                      top: Optional[int] = None,
+                      write: bool = True) -> pd.DataFrame:
+    """Aggregate every per-symbol ``*_summary.json`` under ``report_dir`` into a
+    single ranked leaderboard across all past runs.
+
+    Each row is one symbol from one run (with its file timestamp), letting you
+    compare results across many backtests. Returns the ranked DataFrame and,
+    when ``write`` is True, also writes ``leaderboard_<ts>.csv`` to ``report_dir``.
+    """
+    rows: List[Dict] = []
+    if os.path.isdir(report_dir):
+        for name in sorted(os.listdir(report_dir)):
+            if not name.endswith("_summary.json"):
+                continue
+            # Skip the combined cross-symbol summaries (named backtest_summary_*).
+            if name.startswith("backtest_summary"):
+                continue
+            fpath = os.path.join(report_dir, name)
+            try:
+                with open(fpath, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            except (OSError, json.JSONDecodeError):
+                continue
+            metrics = payload.get("metrics", {}) or {}
+            row = {"run": name.replace("_summary.json", ""),
+                   "symbol": payload.get("symbol", "?"),
+                   "created_at": payload.get("created_at", "")}
+            row.update(metrics)
+            rows.append(row)
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    if sort_by in df.columns:
+        df = df.sort_values(sort_by, ascending=False, na_position="last")
+    df = df.reset_index(drop=True)
+    if top is not None:
+        df = df.head(int(top))
+
+    if write:
+        os.makedirs(report_dir, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out = os.path.join(report_dir, f"leaderboard_{stamp}.csv")
+        df.to_csv(out, index=False)
+    return df

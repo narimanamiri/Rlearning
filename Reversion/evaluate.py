@@ -7,7 +7,10 @@ def evaluate_performance(config_path: str = "config/config.yaml",
                          model_path: str = "best_model",
                          dry_run: bool = False,
                          report_dir: str = "reports",
-                         export: bool = True):
+                         export: bool = True,
+                         plot: bool = False,
+                         seed: int = None,
+                         indicators=None):
     logger = setup_logger("evaluate")
     results = backtest_model(
         config_path,
@@ -15,6 +18,9 @@ def evaluate_performance(config_path: str = "config/config.yaml",
         dry_run=dry_run,
         report_dir=report_dir,
         export=export,
+        plot=plot,
+        seed=seed,
+        indicators=indicators,
     )
 
     if not results:

@@ -4,6 +4,11 @@ data:
   period: "3y"
   train_ratio: 0.7
   val_ratio: 0.15
+  # Technical-indicator groups to engineer. "base" (log_return, SMAs, RSI,
+  # MACD, Bollinger, ATR, volatility) is always included. Extra opt-in groups:
+  # stochastic, obv, roc, williams_r, cci. Override on the CLI with
+  # --indicators. The feature dimension adapts automatically.
+  indicators: ["base"]
 
 env:
   window_size: 50

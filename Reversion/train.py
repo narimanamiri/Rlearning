@@ -35,7 +35,9 @@ class EarlyStoppingCallback(BaseCallback):
 
 def train_rl_agent(config_path: str = "config/config.yaml",
                    dry_run: bool = False,
-                   total_timesteps: int = None):
+                   total_timesteps: int = None,
+                   seed: int = None,
+                   indicators=None):
     """Train the PPO agent on the in-sample *train* segment of the first symbol.
 
     Parameters
@@ -44,9 +46,16 @@ def train_rl_agent(config_path: str = "config/config.yaml",
     dry_run         : when True, use deterministic synthetic data (no network)
                       and a small step budget so the pipeline can be smoke-tested.
     total_timesteps : optional override for ``training.total_timesteps``.
+    seed            : optional override for ``model.seed`` (reproducibility).
+    indicators      : optional override for ``data.indicators`` (feature set).
     """
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
+
+    if seed is not None:
+        config['model']['seed'] = int(seed)
+    if indicators is not None:
+        config.setdefault('data', {})['indicators'] = list(indicators)
 
     set_global_seed(config['model']['seed'])
     logger = setup_logger("train")
@@ -68,7 +77,6 @@ def train_rl_agent(config_path: str = "config/config.yaml",
     for symbol, df in raw_data.items():
         logger.info(f"Processing {symbol}...")
         df = engineer.add_technical_indicators(df)
-        df = engineer.normalize_features(df, fit_scaler=True)
         df = df.dropna().reset_index(drop=True)
         # Walk-forward: train only on the in-sample train segment, holding out
         # validation/test for backtest evaluation.
@@ -78,6 +86,10 @@ def train_rl_agent(config_path: str = "config/config.yaml",
                 f"{symbol}: train segment too short; using full series.")
             train_df = df
         train_df = train_df.reset_index(drop=True)
+        # Fit feature scalers on the *train* segment only (no look-ahead leak),
+        # then normalize that same segment for training.
+        engineer.fit_scalers(train_df)
+        train_df = engineer.transform_features(train_df)
         env = AutoTradingEnv(train_df, config, window, engineer.get_feature_dim(train_df))
         env = Monitor(env)
         all_envs.append(env)

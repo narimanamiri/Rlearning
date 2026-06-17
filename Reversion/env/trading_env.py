@@ -36,6 +36,10 @@ class AutoTradingEnv(gym.Env):
         self.current_step = self.window_size
         self.balance = self.initial_balance
         self.shares_held = 0
+        # Cost basis (price paid) for the currently-held shares. Used so that
+        # realized PnL on a sell is measured against the actual entry price
+        # rather than an approximation from the previous bar's close.
+        self.entry_price = 0.0
         self.net_worth = self.initial_balance
         self.prev_net_worth = self.initial_balance
         self.max_net_worth = self.initial_balance
@@ -108,6 +112,12 @@ class AutoTradingEnv(gym.Env):
             return
 
         cost = shares_bought * price * (1 + self.transaction_cost_pct + self.slippage_pct)
+        # Update the (volume-weighted) cost basis before adding the new shares.
+        prev_shares = self.shares_held
+        self.entry_price = (
+            (self.entry_price * prev_shares + price * shares_bought)
+            / (prev_shares + shares_bought)
+        )
         self.balance -= cost
         self.shares_held += shares_bought
 
@@ -124,7 +134,11 @@ class AutoTradingEnv(gym.Env):
         if self.shares_held <= 0:
             return
         revenue = self.shares_held * price * (1 - self.transaction_cost_pct - self.slippage_pct)
-        pnl = revenue - (self.shares_held * self.df.iloc[self.current_step - 1]['close'])  # approx cost basis
+        # Realized PnL against the actual entry (cost-basis) price of the
+        # shares being closed, including the original purchase frictions.
+        cost_basis = self.shares_held * self.entry_price * (
+            1 + self.transaction_cost_pct + self.slippage_pct)
+        pnl = revenue - cost_basis
         self.balance += revenue
         self.trade_history.append({
             'step': self.current_step,
@@ -135,6 +149,7 @@ class AutoTradingEnv(gym.Env):
             'pnl': pnl
         })
         self.shares_held = 0
+        self.entry_price = 0.0
 
     def _liquidate(self, price):
         if self.shares_held > 0:

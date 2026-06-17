@@ -76,26 +76,38 @@ and PPO hyperparameters in `config/config.yaml`.
 ### CLI options (new)
 `main.py` now has a small command-line interface:
 
+`main.py --help` works **without** `stable-baselines3`/`gymnasium`/`torch`
+installed — the heavy training/backtest imports are deferred until they are
+actually needed, so `--help` and `--leaderboard` run anywhere.
+
 ```bash
 python main.py --help
-python main.py --config config/config.yaml      # override the config path
-python main.py --dry-run                         # offline smoke test, no network
-python main.py --train-only                      # train, skip backtest/eval
-python main.py --backtest-only --model best_model  # evaluate an existing model
-python main.py --report-dir out/reports          # where reports are written
-python main.py --timesteps 5000                  # override training budget
-python main.py --no-export                        # skip CSV/JSON report files
+python main.py --config config/config.yaml       # override the config path
+python main.py --dry-run                          # offline smoke test, no network
+python main.py --train-only                       # train, skip backtest/eval
+python main.py --backtest-only --model best_model # evaluate an existing model
+python main.py --report-dir out/reports           # where reports are written
+python main.py --timesteps 5000                   # override training budget
+python main.py --no-export                         # skip CSV/JSON report files
+python main.py --seed 7                            # reproducible run
+python main.py --indicators base stochastic obv    # choose the feature set
+python main.py --plot                              # export equity-curve PNGs
+python main.py --leaderboard --sort-by total_return_pct  # rank past runs
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--config PATH` | Path to the YAML config (default `config/config.yaml`). |
 | `--dry-run` | Run end-to-end on **deterministic synthetic data** with a small step budget. No network calls. |
-| `--train-only` / `--backtest-only` | Restrict to a single stage (mutually exclusive). |
+| `--train-only` / `--backtest-only` / `--leaderboard` | Restrict to a single stage (mutually exclusive). |
 | `--model PATH` | Saved model path (without `.zip`) for backtesting (default `best_model`). |
 | `--report-dir DIR` | Output dir for reports (defaults to `reporting.report_dir` in the config, else `reports`). |
 | `--timesteps N` | Override `training.total_timesteps`. |
+| `--seed N` | Override `model.seed`; wired through training, env reset and backtest for reproducibility. |
+| `--indicators NAME [NAME ...]` | Indicator groups to engineer (`base stochastic obv roc williams_r cci`); `base` is always kept. |
+| `--plot` | Render a PNG equity-curve plot per symbol during backtest (matplotlib; skipped with a hint if unavailable). |
 | `--no-export` | Disable writing CSV/JSON report artifacts. |
+| `--sort-by METRIC` / `--top N` | Ranking metric and row cap for `--leaderboard`. |
 
 ### New features
 
@@ -138,6 +150,60 @@ for CI / smoke-testing changes:
 cd Reversion
 python main.py --dry-run --timesteps 2048
 ```
+
+**5. Selectable indicator sets.** `data.indicators` in `config.yaml` (or the
+`--indicators` flag) chooses which technical-indicator groups
+`FeatureEngineer` builds. `base` (log return, SMAs, RSI, MACD, Bollinger, ATR,
+volatility) is always included; opt-in extras are `stochastic` (%K/%D), `obv`
+(on-balance volume), `roc` (rate of change / momentum), `williams_r`
+(Williams %R) and `cci` (commodity channel index). The observation
+`feature_dim` adapts automatically, and unknown names are rejected with a clear
+error.
+
+```bash
+python main.py --dry-run --indicators base stochastic obv cci
+```
+
+**6. Reproducible runs (`--seed`).** `--seed N` overrides `model.seed` and is
+threaded through global seeding, the synthetic-data generator, the env reset,
+and PPO, so two runs with the same seed produce identical results.
+
+```bash
+python main.py --dry-run --seed 7
+```
+
+**7. Equity-curve plot export (`--plot`).** During backtest, `--plot` renders a
+PNG per symbol (net-worth line with an optional price overlay and the total
+return in the title) next to the CSV/JSON reports, e.g.
+`reports/BTC-USD_<ts>_equity.png`. `matplotlib` is imported lazily and guarded:
+if it is missing the run prints a hint and continues rather than crashing.
+
+```bash
+python main.py --dry-run --plot
+```
+
+**8. Cross-run metrics leaderboard (`--leaderboard`).** Aggregates every
+per-symbol `*_summary.json` under the report dir into one ranked table (one row
+per symbol per run, with its timestamp), writes `leaderboard_<ts>.csv`, and
+prints it. Pure `pandas` — no model, network or heavy deps required, so it runs
+even where `stable-baselines3` is not installed.
+
+```bash
+python main.py --leaderboard --sort-by total_return_pct --top 10
+```
+
+### Correctness fixes in this pass
+- **Out-of-sample normalization.** The backtest previously created a fresh
+  `FeatureEngineer` and called `normalize_features(fit_scaler=False)` with an
+  empty scaler, so **test features were never scaled** while training used
+  scaled features — a silent train/serve skew. Scalers are now fit on each
+  symbol's **train** segment and applied to its **test** segment (in both
+  `train.py` and `backtest.py`), which also removes the prior look-ahead leak.
+- **Realized-PnL cost basis.** `AutoTradingEnv._sell` now measures PnL against
+  the actual (volume-weighted) entry price of the held shares instead of the
+  previous bar's close, so trade PnL and win-rate/profit-factor are accurate.
+- **Indicator math.** MACD now uses the standard `adjust=False` recursive EMA,
+  and RSI is guarded against divide-by-zero (no-loss windows → 100).
 
 ---
 

@@ -8,3 +8,4 @@ scikit-learn
 pyyaml
 torch
 tensorboard
+matplotlib  # optional: only needed for `--plot` equity-curve PNGs (guarded)
